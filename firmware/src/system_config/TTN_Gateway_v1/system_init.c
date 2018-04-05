@@ -928,7 +928,7 @@ void SYS_Initialize ( void* data )
  
  
      sysObj.drvUsart0 = DRV_USART_Initialize(DRV_USART_INDEX_0, (SYS_MODULE_INIT *)&drvUsart0InitData);
-    sysObj.drvUsart1 = DRV_USART_Initialize(DRV_USART_INDEX_1, (SYS_MODULE_INIT *)&drvUsart1InitData);
+    sysObj.drvUsart1 = NULL; // Initialize UART only after powerering LoRa module
     sysObj.drvUsart2 = DRV_USART_Initialize(DRV_USART_INDEX_2, (SYS_MODULE_INIT *)&drvUsart2InitData);
     SYS_INT_VectorPrioritySet(INT_VECTOR_UART4_TX, INT_PRIORITY_LEVEL1);
     SYS_INT_VectorSubprioritySet(INT_VECTOR_UART4_TX, INT_SUBPRIORITY_LEVEL0);
@@ -1003,10 +1003,19 @@ void SYS_Initialize ( void* data )
     LORA_Initialize();
 }
 
+void SYS_DeinitializeUsart1 ( void )
+{
+    if (sysObj.drvUsart1)
+    {
+        DRV_USART_Deinitialize(sysObj.drvUsart1);
+    }
+    sysObj.drvUsart1 = NULL;
+}
+
 void SYS_ReInitializeUsart1 ( uint32_t baud )
 {
     DRV_USART_INIT initData = drvUsart1InitData;
-    DRV_USART_Deinitialize(sysObj.drvUsart1);
+    SYS_DeinitializeUsart1();
     initData.baud = baud;
     sysObj.drvUsart1 = DRV_USART_Initialize(DRV_USART_INDEX_1, (SYS_MODULE_INIT *)&initData);
 }
