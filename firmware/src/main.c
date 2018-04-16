@@ -7,7 +7,9 @@
 
   Company:
     Microchip Technology Inc.
-  
+  
+
+
   File Name:
     main.c
 
@@ -85,8 +87,6 @@ int main(void)
     // Initialize the FreeRTOS trace recorder
     vTraceInitTraceData();
     uiTraceStart();
-    /* Initialize all MPLAB Harmony modules, including application(s). */
-    SYS_Initialize(NULL);
 
     if(wdt_get_reboot_reason() != RESET_REASON_POWERON)
     {
@@ -107,8 +107,11 @@ int main(void)
     sdSet(ON);       // SD card
     wifiSet(ON);     // Wifi
     ethernetSet(ON); // Ethernet
-    loraSet(ON);     // LoRa
+    loraSet(OFF);     // LoRa, will be turned on later
     bleSet(ON);      // BLE
+
+    /* Initialize all MPLAB Harmony modules, including application(s). */
+    SYS_Initialize(NULL);
 
     while(true)
     {

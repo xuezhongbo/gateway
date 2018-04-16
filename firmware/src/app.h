@@ -318,21 +318,16 @@ extern "C"
     /* LoRa */
     typedef enum
     {
-        APP_LORA_INIT = 0,
+        APP_LORA_POWER_CYCLE = 0,
+        APP_LORA_INIT,
         APP_LORA_WAIT_INIT_COMPLETE,
         APP_LORA_CHECK_COMMUNICATION,
         APP_LORA_SWITCH_BAUD,
         APP_LORA_WAIT_FOR_APP,
         APP_LORA_GO_ASYNC,
         APP_LORA_CONFIG,
-        APP_LORA_WAIT_CONFIG_COMPLETE,
         APP_LORA_WAIT_TTN_CONFIG_COMPLETE,
-        APP_LORA_UPLOAD,
-        APP_LORA_SEND,
         APP_LORA_POLL_UART,
-        APP_LORA_RECEIVE,
-        APP_LORA_IDLE,
-        APP_LORA_WAIT_SEND_COMPLETE,
         APP_LORA_NOT_FOUND,
     } APP_STATES_LORA;
 

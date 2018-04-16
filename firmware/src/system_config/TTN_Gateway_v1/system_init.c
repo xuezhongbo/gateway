@@ -1005,7 +1005,7 @@ void SYS_Initialize ( void* data )
 
 void SYS_DeinitializeUsart1 ( void )
 {
-    if (sysObj.drvUsart1)
+    if (sysObj.drvUsart1 != NULL)
     {
         DRV_USART_Deinitialize(sysObj.drvUsart1);
     }

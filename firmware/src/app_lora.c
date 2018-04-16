@@ -1,4 +1,4 @@
-// Copyright © 2016-2018 The Things Products
+// Copyright Â© 2016-2018 The Things Products
 // Use of this source code is governed by the MIT license that can be found in
 // the LICENSE file.
 
@@ -100,9 +100,10 @@ void    printTXPacket(loraTXPacket* txpkt);
 static bool getSync();
 static bool setSync(bool public);
 static void _setState(APP_STATES_LORA newState);
-static void restart_lora_configuration();
+static void powercycle_lora_module();
 static uint32_t getPreferredBaud(void);
 static void shortSpinloopDelay(void);
+static void pollUartForIncomingMessages(void);
 
 static uint32_t timeout_timer = 0;
 static uint32_t lastAckTime   = 0;
@@ -946,15 +947,12 @@ void enqueueLoRaTX(loraTXPacket* pkt)
 void APP_LORA_Initialize(void)
 {
     allowed_to_start = false;
-    /* Place the App state machine in its initial state. */
-    _setState(APP_LORA_INIT);
+    powercycle_lora_module();
 
     xRXQueue = xQueueCreate(5, sizeof(loraRXPacket));
     xTXQueue = xQueueCreate(5, sizeof(loraTXPacket));
 
     xUARTRXQueue = xQueueCreate(300, sizeof(uint8_t));
-    // appData.state = APP_LORA_IDLE;
-    //  LoraMutexInit();
 }
 
 void APP_LORA_SetStartEvent(void)
@@ -988,25 +986,35 @@ uint8_t uartrx[300];
 bool     gotuartrx_packet = false;
 uint16_t uartrx_len;
 
-static void restart_lora_configuration(void)
+static void powercycle_lora_module(void)
 {
-    SYS_DEBUG(SYS_ERROR_FATAL, "LORA: RESET MODULE\r\n");
-    DRV_USART_Close(appData.USARTHandle);
-    // TODO Verify untested fix. Here we power cycle the module as resetting (done in loraInit) the module was not
-    // enough.
+    SYS_DEBUG(SYS_ERROR_INFO, "LORA: POWER CYCLE MODULE\r\n");
+    if (appData.USARTHandle != NULL)
+    {
+        DRV_USART_Close(appData.USARTHandle);
+    }
+    SYS_DeinitializeUsart1();
     loraSet(false);
-    vTaskDelay(100 / portTICK_PERIOD_MS);
-    loraSet(true);
-    _setState(APP_LORA_INIT);
+    _setState(APP_LORA_POWER_CYCLE);
 }
 
 void APP_LORA_Tasks(void)
 {
-    static loraRXPacket rxpkt = {0}, empty_rxpkt = {0};
-    static loraTXPacket txpkt = {0}, empty_txpkt = {0};
-
     switch(appData.state)
     {
+        case APP_LORA_POWER_CYCLE:
+        {
+            if (timeoutTimerHandle == 0) 
+            {
+                timeoutTimerHandle = SYS_TMR_DelayMS(WAIT_FOR_INIT_COMPLETE_TIME_MS);
+            }
+            if(SYS_TMR_DelayStatusGet(timeoutTimerHandle))
+            {
+                loraSet(true);
+                _setState(APP_LORA_INIT);
+            }
+            break;
+        }
         case APP_LORA_INIT:
         {
             initLora();
@@ -1121,7 +1129,7 @@ void APP_LORA_Tasks(void)
                 if(lora_config_failed_counter > 2)
                 {
                     lora_config_failed_counter = 0;
-                    restart_lora_configuration();
+                    powercycle_lora_module();
                     break;
                 }
             }
@@ -1157,215 +1165,7 @@ void APP_LORA_Tasks(void)
         }
         case APP_LORA_POLL_UART:
         {
-            rxpkt = empty_rxpkt;
-
-            if(SYS_TMR_TickCountGet() - lastAckTime >=
-               SYS_TMR_TickCounterFrequencyGet() * KICK_MODULE_AFTER_LAST_ACK_TIMEOUT)
-            {
-                lastAckTime = SYS_TMR_TickCountGet();
-                SYS_PRINT("LORA: Kick LoRa module with ACK after not acked it for %ds\r\n",
-                          KICK_MODULE_AFTER_LAST_ACK_TIMEOUT);
-                sendRXReply(LORA_ACK);
-            }
-
-            if(hasLoraTXPacketInQueue())
-            {
-                loraTXPacket send_packet = {0};
-                dequeueLoRaTX(&send_packet);
-
-                if(send_packet.timestamp > last_rx_timestamp)
-                {
-                    uint8_t txstatus = LORA_TX_STATUS_READY; // TODO getStatus(LORA_COMMAND_TXSTATUS);
-                    // uint8_t txstatus = getStatus(LORA_COMMAND_TXSTATUS);
-                    if(txstatus == LORA_TX_STATUS_READY || txstatus == LORA_TX_STATUS_LOADED)
-                    {
-                        sendPacket(&send_packet);
-                        // SYS_DEBUG(SYS_ERROR_ERROR, "LORA: tx status: %u\r\n", txstatus);
-                        // printTXPacket(send_packet);
-                    }
-                    else
-                        SYS_DEBUG(SYS_ERROR_ERROR, "LORA: TX not ready, TX aborted, status: %u\r\n", txstatus);
-                }
-                else
-                {
-                    SYS_DEBUG(SYS_ERROR_ERROR, "LORA: TXPKT failed, too late! tx: %u rx: %u\r\n", send_packet.timestamp,
-                              last_rx_timestamp);
-                    ErrorMessageWarning_Set(ERROR_MESSAGE_WARNING_LORA_TX_TOO_LATE);
-                }
-                break;
-            }
-
-            if(!gotuartrx_packet && uxQueueMessagesWaiting(xUARTRXQueue) > 4)
-            {
-                uint8_t msg[1];
-                if(xQueueReceive(xUARTRXQueue, msg, 0) != pdTRUE)
-                    break;
-                if(msg[0] != LORA_FRAME_START)
-                    break;
-                uartrx[0] = LORA_FRAME_START;
-
-                if(xQueueReceive(xUARTRXQueue, msg, 0) != pdTRUE)
-                    break;
-                uartrx[1] = msg[0];
-
-                if(xQueueReceive(xUARTRXQueue, msg, 0) != pdTRUE)
-                    break;
-                uartrx[2] = msg[0];
-
-                if(xQueueReceive(xUARTRXQueue, msg, 0) != pdTRUE)
-                    break;
-                uartrx[3] = msg[0];
-
-                uint16_t len = _SET_BYTES_16BIT(uartrx[2], uartrx[3]);
-                if(len >= 295)
-                {
-                    sendRXReply(LORA_ACK);
-                    break;
-                }
-
-                gotuartrx_packet = true;
-                uartrx_len       = len;
-                //   SYS_CONSOLE_PRINT("LORA: PKTL:%d\r\n",len);
-            }
-
-            if(gotuartrx_packet &&
-               uxQueueMessagesWaiting(xUARTRXQueue) >= uartrx_len + 2) // +2 for checksum & frame end
-            {
-                uint16_t byte_counter = 0;
-                while(byte_counter < (uartrx_len + 2))
-                {
-                    uint8_t msg[1];
-                    if(xQueueReceive(xUARTRXQueue, msg, 0) != pdTRUE)
-                    {
-                        gotuartrx_packet = false;
-                        uartrx_len       = 0;
-                        sendRXReply(LORA_ACK);
-                        break;
-                    }
-                    uartrx[4 + byte_counter] = msg[0];
-                    byte_counter++;
-                }
-                //  SYS_CONSOLE_MESSAGE("LORA: PKT\r\n");
-                uint16_t pktit = 0;
-                for(pktit = 0; pktit < uartrx_len + 6; pktit++)
-                {
-                    //      SYS_CONSOLE_PRINT("%d\r\n",uartrx[pktit]);
-                }
-                uint32_t checksum   = 0;
-                uint16_t checksum_i = 0;
-
-                for(checksum_i = 0; checksum_i < (uartrx_len + 4); checksum_i++) // +4 for packet header type length
-                {
-                    checksum += uartrx[checksum_i];
-                }
-                checksum = checksum & 0xFF;
-                if(checksum == uartrx[uartrx_len + 4])
-                {
-
-                    if(uartrx[1] != LORA_COMMAND_RECEIVE)
-                    {
-                        gotuartrx_packet = false;
-                        memset(uartrx, 0, uartrx_len + 6);
-                        uartrx_len = 0;
-                        sendRXReply(LORA_ACK);
-                        //    SYS_CONSOLE_MESSAGE("LORA: REGLOR\r\n");
-                        //    SYS_CONSOLE_PRINT("LORA: INBUF:%d\r\n",uxQueueMessagesWaiting( xUARTRXQueue));
-                        break;
-                    }
-                    // SYS_CONSOLE_MESSAGE("LORA: LPKTOK\r\n");
-                    parseRXPacket(&uartrx[4], &rxpkt);
-                    if(rxpkt.pkt_status == 0x10 ||
-                       rxpkt.pkt_status == 0x01) // Place the packet in a queue such that app_mqtt can send it
-                    {
-                        //   SYS_CONSOLE_MESSAGE("LORA: PKTOUT\r\n");
-                        enqueueLoRaRX(&rxpkt);
-                        SYS_DEBUG(SYS_ERROR_INFO, "LORA: Accepted packet\r\n");
-                        // printRXPacket(&rxpkt);
-                        last_rx_timestamp = rxpkt.timestamp;
-                    }
-                    else
-                    {
-                        SYS_DEBUG(SYS_ERROR_INFO, "LORA: Packet dropped! Bad CRC\r\n");
-                    }
-                }
-                else
-                {
-                    SYS_CONSOLE_MESSAGE("LORA: PKT CHKFAIL\r\n");
-                }
-                gotuartrx_packet = false;
-                memset(uartrx, 0, uartrx_len + 6);
-                uartrx_len = 0;
-                sendRXReply(LORA_ACK);
-                // SYS_CONSOLE_MESSAGE("LORA: EMPTY PKT MEM\r\n");
-                // SYS_CONSOLE_PRINT("LORA: INBUF:%d\r\n",uxQueueMessagesWaiting( xUARTRXQueue));
-            }
-            break;
-        }
-
-        case APP_LORA_SEND:
-        {
-            // txStatus();
-            if(!SYS_TMR_DelayStatusGet(timeoutTimerHandle))
-                return;
-            txpkt.timestamp           = 0;
-            txpkt.tx_mode             = 0;
-            txpkt.tx_power            = 7;
-            txpkt.frequency           = 868500000ul; // 868300000;//
-            txpkt.rf_chain            = 0;           // rxpkt.rf_chain;
-            txpkt.modulation          = 0x10;
-            txpkt.bandwidth           = 3; // 3;
-            txpkt.coderate            = 1; // 1;
-            txpkt.datarate            = 2; // 16;
-            txpkt.invert_polarity     = 0;
-            txpkt.frequency_deviation = 0;
-            txpkt.preamble            = 8;
-            txpkt.no_crc              = 0;
-            txpkt.no_header           = 0;
-            txpkt.payload_size        = 8;
-            txpkt.payload[0]          = 0x11;
-            txpkt.payload[1]          = 0x22;
-            txpkt.payload[2]          = 0x33;
-            txpkt.payload[3]          = 0x44;
-            txpkt.payload[4]          = 0xAA;
-            txpkt.payload[5]          = 0xBB;
-            txpkt.payload[6]          = 0xCC;
-            txpkt.payload[7]          = 0xDD;
-            ndr++;
-            if(ndr > 5)
-                ndr = 0;
-            SYS_PRINT("ndr: %d\r\n", ndr);
-            // txpkt.payload_size = rxpkt.payload_size;
-            /* uint8_t i = 0;
-            for (i = 0; i <= txpkt.payload_size; i++)
-            {
-                txpkt.payload[i] = rxpkt.payload[i];
-            } */
-            sendPacket(&txpkt);
-            printTXPacket(&txpkt);
-
-            txpkt = empty_txpkt;
-
-            _setState(APP_LORA_WAIT_SEND_COMPLETE);
-
-            break;
-        }
-        case APP_LORA_WAIT_SEND_COMPLETE:
-        {
-            if(getStatus(LORA_COMMAND_TXSTATUS) == LORA_TX_STATUS_READY)
-            {
-                // SYS_DEBUG(SYS_ERROR_DEBUG, "LORA: TX STATUS %d\r\n", getStatus(LORA_COMMAND_TXSTATUS));
-                _setState(APP_LORA_RECEIVE);
-            }
-
-            break;
-        }
-
-        case APP_LORA_IDLE:
-        {
-            SYS_TMR_CallbackStop(timeoutTimerHandle); // cancel pending timeout
-            timeoutTimerHandle = SYS_TMR_DelayMS(10000);
-            _setState(APP_LORA_SEND);
-            Nop();
+            pollUartForIncomingMessages();
             break;
         }
     }
@@ -1423,3 +1223,153 @@ static void shortSpinloopDelay(void)
     }
 }
 
+static void pollUartForIncomingMessages(void)
+{
+    const loraRXPacket empty_rxpkt = {0};
+    const loraTXPacket empty_txpkt = {0};
+    static loraRXPacket rxpkt = {0};
+    static loraTXPacket txpkt = {0};
+    
+    rxpkt = empty_rxpkt;
+
+    if(SYS_TMR_TickCountGet() - lastAckTime >=
+       SYS_TMR_TickCounterFrequencyGet() * KICK_MODULE_AFTER_LAST_ACK_TIMEOUT)
+    {
+        lastAckTime = SYS_TMR_TickCountGet();
+        SYS_PRINT("LORA: Kick LoRa module with ACK after not acked it for %ds\r\n",
+                  KICK_MODULE_AFTER_LAST_ACK_TIMEOUT);
+        sendRXReply(LORA_ACK);
+    }
+
+    if(hasLoraTXPacketInQueue())
+    {
+        loraTXPacket send_packet = {0};
+        dequeueLoRaTX(&send_packet);
+
+        if(send_packet.timestamp > last_rx_timestamp)
+        {
+            uint8_t txstatus = LORA_TX_STATUS_READY; // TODO getStatus(LORA_COMMAND_TXSTATUS);
+            // uint8_t txstatus = getStatus(LORA_COMMAND_TXSTATUS);
+            if(txstatus == LORA_TX_STATUS_READY || txstatus == LORA_TX_STATUS_LOADED)
+            {
+                sendPacket(&send_packet);
+                // SYS_DEBUG(SYS_ERROR_ERROR, "LORA: tx status: %u\r\n", txstatus);
+                // printTXPacket(send_packet);
+            }
+            else
+                SYS_DEBUG(SYS_ERROR_ERROR, "LORA: TX not ready, TX aborted, status: %u\r\n", txstatus);
+        }
+        else
+        {
+            SYS_DEBUG(SYS_ERROR_ERROR, "LORA: TXPKT failed, too late! tx: %u rx: %u\r\n", send_packet.timestamp,
+                      last_rx_timestamp);
+            ErrorMessageWarning_Set(ERROR_MESSAGE_WARNING_LORA_TX_TOO_LATE);
+        }
+        return;
+    }
+
+    if(!gotuartrx_packet && uxQueueMessagesWaiting(xUARTRXQueue) > 4)
+    {
+        uint8_t msg[1];
+        if(xQueueReceive(xUARTRXQueue, msg, 0) != pdTRUE)
+            return;
+        if(msg[0] != LORA_FRAME_START)
+            return;
+        uartrx[0] = LORA_FRAME_START;
+
+        if(xQueueReceive(xUARTRXQueue, msg, 0) != pdTRUE)
+            return;
+        uartrx[1] = msg[0];
+
+        if(xQueueReceive(xUARTRXQueue, msg, 0) != pdTRUE)
+            return;
+        uartrx[2] = msg[0];
+
+        if(xQueueReceive(xUARTRXQueue, msg, 0) != pdTRUE)
+            return;
+        uartrx[3] = msg[0];
+
+        uint16_t len = _SET_BYTES_16BIT(uartrx[2], uartrx[3]);
+        if(len >= 295)
+        {
+            sendRXReply(LORA_ACK);
+            return;
+        }
+
+        gotuartrx_packet = true;
+        uartrx_len       = len;
+        //   SYS_CONSOLE_PRINT("LORA: PKTL:%d\r\n",len);
+    }
+
+    if(gotuartrx_packet &&
+       uxQueueMessagesWaiting(xUARTRXQueue) >= uartrx_len + 2) // +2 for checksum & frame end
+    {
+        uint16_t byte_counter = 0;
+        while(byte_counter < (uartrx_len + 2))
+        {
+            uint8_t msg[1];
+            if(xQueueReceive(xUARTRXQueue, msg, 0) != pdTRUE)
+            {
+                gotuartrx_packet = false;
+                uartrx_len       = 0;
+                sendRXReply(LORA_ACK);
+                break;
+            }
+            uartrx[4 + byte_counter] = msg[0];
+            byte_counter++;
+        }
+        //  SYS_CONSOLE_MESSAGE("LORA: PKT\r\n");
+        uint16_t pktit = 0;
+        for(pktit = 0; pktit < uartrx_len + 6; pktit++)
+        {
+            //      SYS_CONSOLE_PRINT("%d\r\n",uartrx[pktit]);
+        }
+        uint32_t checksum   = 0;
+        uint16_t checksum_i = 0;
+
+        for(checksum_i = 0; checksum_i < (uartrx_len + 4); checksum_i++) // +4 for packet header type length
+        {
+            checksum += uartrx[checksum_i];
+        }
+        checksum = checksum & 0xFF;
+        if(checksum == uartrx[uartrx_len + 4])
+        {
+
+            if(uartrx[1] != LORA_COMMAND_RECEIVE)
+            {
+                gotuartrx_packet = false;
+                memset(uartrx, 0, uartrx_len + 6);
+                uartrx_len = 0;
+                sendRXReply(LORA_ACK);
+                //    SYS_CONSOLE_MESSAGE("LORA: REGLOR\r\n");
+                //    SYS_CONSOLE_PRINT("LORA: INBUF:%d\r\n",uxQueueMessagesWaiting( xUARTRXQueue));
+                return;
+            }
+            // SYS_CONSOLE_MESSAGE("LORA: LPKTOK\r\n");
+            parseRXPacket(&uartrx[4], &rxpkt);
+            if(rxpkt.pkt_status == 0x10 ||
+               rxpkt.pkt_status == 0x01) // Place the packet in a queue such that app_mqtt can send it
+            {
+                //   SYS_CONSOLE_MESSAGE("LORA: PKTOUT\r\n");
+                enqueueLoRaRX(&rxpkt);
+                SYS_DEBUG(SYS_ERROR_INFO, "LORA: Accepted packet\r\n");
+                // printRXPacket(&rxpkt);
+                last_rx_timestamp = rxpkt.timestamp;
+            }
+            else
+            {
+                SYS_DEBUG(SYS_ERROR_INFO, "LORA: Packet dropped! Bad CRC\r\n");
+            }
+        }
+        else
+        {
+            SYS_CONSOLE_MESSAGE("LORA: PKT CHKFAIL\r\n");
+        }
+        gotuartrx_packet = false;
+        memset(uartrx, 0, uartrx_len + 6);
+        uartrx_len = 0;
+        sendRXReply(LORA_ACK);
+        // SYS_CONSOLE_MESSAGE("LORA: EMPTY PKT MEM\r\n");
+        // SYS_CONSOLE_PRINT("LORA: INBUF:%d\r\n",uxQueueMessagesWaiting( xUARTRXQueue));
+    }
+}

@@ -116,6 +116,7 @@ void loraSet(bool state)
     {
         TRISE  = TRISE | 0x02; // LoRa off
         PORTE  = PORTE | 0x02;
+        TRISG  = TRISG | 0x03; // Set UART to LoRa on tristate
         loraOn = false;
     }
 }
