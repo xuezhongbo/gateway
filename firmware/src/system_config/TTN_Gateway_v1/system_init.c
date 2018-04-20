@@ -929,6 +929,8 @@ void SYS_Initialize ( void* data )
  
      sysObj.drvUsart0 = DRV_USART_Initialize(DRV_USART_INDEX_0, (SYS_MODULE_INIT *)&drvUsart0InitData);
     sysObj.drvUsart1 = NULL; // Initialize UART only after powerering LoRa module
+    SYS_ReInitializeUsart1(DRV_USART_BAUD_RATE_IDX1);
+
     sysObj.drvUsart2 = DRV_USART_Initialize(DRV_USART_INDEX_2, (SYS_MODULE_INIT *)&drvUsart2InitData);
     SYS_INT_VectorPrioritySet(INT_VECTOR_UART4_TX, INT_PRIORITY_LEVEL1);
     SYS_INT_VectorSubprioritySet(INT_VECTOR_UART4_TX, INT_SUBPRIORITY_LEVEL0);
