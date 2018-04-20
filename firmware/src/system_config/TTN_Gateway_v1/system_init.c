@@ -928,9 +928,12 @@ void SYS_Initialize ( void* data )
  
  
      sysObj.drvUsart0 = DRV_USART_Initialize(DRV_USART_INDEX_0, (SYS_MODULE_INIT *)&drvUsart0InitData);
-    sysObj.drvUsart1 = NULL; // Initialize UART only after powerering LoRa module
-    SYS_ReInitializeUsart1(DRV_USART_BAUD_RATE_IDX1);
-
+    // Note: Uart should be disabled while powering off the LoRa module as otherwise it
+    // would get power via the RX/TX lines.
+    // But here we initialize the uart as keeping it uninitialised from boot is not an option
+    // as it leads to random crashes. So it is initialized at boot, in the init of LoRa the uart
+    // disabling again, and after power on of the LoRa module re-initializing again. 
+    sysObj.drvUsart1 = DRV_USART_Initialize(DRV_USART_INDEX_1, (SYS_MODULE_INIT *)&drvUsart1InitData);
     sysObj.drvUsart2 = DRV_USART_Initialize(DRV_USART_INDEX_2, (SYS_MODULE_INIT *)&drvUsart2InitData);
     SYS_INT_VectorPrioritySet(INT_VECTOR_UART4_TX, INT_PRIORITY_LEVEL1);
     SYS_INT_VectorSubprioritySet(INT_VECTOR_UART4_TX, INT_SUBPRIORITY_LEVEL0);

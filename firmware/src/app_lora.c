@@ -993,6 +993,12 @@ static void powercycle_lora_module(void)
     {
         DRV_USART_Close(appData.USARTHandle);
     }
+    
+    // Note: Uart should be disabled while powering off the LoRa module as otherwise it
+    // would get power via the RX/TX lines.
+    // Here we deinitialize the uart. Keeping it uninitialised from boot is not an option
+    // as it leads to random crashes. So it is initialized at boot, in the init of LoRa the uart
+    // disabling again, and after power on of the LoRa module re-initializing again. 
     SYS_DeinitializeUsart1();
     loraSet(false);
     _setState(APP_LORA_POWER_CYCLE);
