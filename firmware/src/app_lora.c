@@ -1273,103 +1273,103 @@ static void pollUartForIncomingMessages(void)
         uint8_t msg[1];
         if(xQueueReceive(xUARTRXQueue, msg, 0) != pdTRUE)
             return;
-        if(msg[0] != LORA_FRAME_START)
-            return;
-        uartrx[0] = LORA_FRAME_START;
-
-        if(xQueueReceive(xUARTRXQueue, msg, 0) != pdTRUE)
-            return;
-        uartrx[1] = msg[0];
-
-        if(xQueueReceive(xUARTRXQueue, msg, 0) != pdTRUE)
-            return;
-        uartrx[2] = msg[0];
-
-        if(xQueueReceive(xUARTRXQueue, msg, 0) != pdTRUE)
-            return;
-        uartrx[3] = msg[0];
-
-        uint16_t len = _SET_BYTES_16BIT(uartrx[2], uartrx[3]);
-        if(len >= 295)
-        {
-            sendRXReply(LORA_ACK);
-            return;
-        }
-
-        gotuartrx_packet = true;
-        uartrx_len       = len;
+//        if(msg[0] != LORA_FRAME_START)
+//            return;
+//        uartrx[0] = LORA_FRAME_START;
+//
+//        if(xQueueReceive(xUARTRXQueue, msg, 0) != pdTRUE)
+//            return;
+//        uartrx[1] = msg[0];
+//
+//        if(xQueueReceive(xUARTRXQueue, msg, 0) != pdTRUE)
+//            return;
+//        uartrx[2] = msg[0];
+//
+//        if(xQueueReceive(xUARTRXQueue, msg, 0) != pdTRUE)
+//            return;
+//        uartrx[3] = msg[0];
+//
+//        uint16_t len = _SET_BYTES_16BIT(uartrx[2], uartrx[3]);
+//        if(len >= 295)
+//        {
+//            sendRXReply(LORA_ACK);
+//            return;
+//        }
+//
+//        gotuartrx_packet = true;
+//        uartrx_len       = len;
         //   SYS_CONSOLE_PRINT("LORA: PKTL:%d\r\n",len);
     }
 
-    if(gotuartrx_packet &&
-       uxQueueMessagesWaiting(xUARTRXQueue) >= uartrx_len + 2) // +2 for checksum & frame end
-    {
-        uint16_t byte_counter = 0;
-        while(byte_counter < (uartrx_len + 2))
-        {
-            uint8_t msg[1];
-            if(xQueueReceive(xUARTRXQueue, msg, 0) != pdTRUE)
-            {
-                gotuartrx_packet = false;
-                uartrx_len       = 0;
-                sendRXReply(LORA_ACK);
-                break;
-            }
-            uartrx[4 + byte_counter] = msg[0];
-            byte_counter++;
-        }
-        //  SYS_CONSOLE_MESSAGE("LORA: PKT\r\n");
-        uint16_t pktit = 0;
-        for(pktit = 0; pktit < uartrx_len + 6; pktit++)
-        {
-            //      SYS_CONSOLE_PRINT("%d\r\n",uartrx[pktit]);
-        }
-        uint32_t checksum   = 0;
-        uint16_t checksum_i = 0;
-
-        for(checksum_i = 0; checksum_i < (uartrx_len + 4); checksum_i++) // +4 for packet header type length
-        {
-            checksum += uartrx[checksum_i];
-        }
-        checksum = checksum & 0xFF;
-        if(checksum == uartrx[uartrx_len + 4])
-        {
-
-            if(uartrx[1] != LORA_COMMAND_RECEIVE)
-            {
-                gotuartrx_packet = false;
-                memset(uartrx, 0, uartrx_len + 6);
-                uartrx_len = 0;
-                sendRXReply(LORA_ACK);
-                //    SYS_CONSOLE_MESSAGE("LORA: REGLOR\r\n");
-                //    SYS_CONSOLE_PRINT("LORA: INBUF:%d\r\n",uxQueueMessagesWaiting( xUARTRXQueue));
-                return;
-            }
-            // SYS_CONSOLE_MESSAGE("LORA: LPKTOK\r\n");
-            parseRXPacket(&uartrx[4], &rxpkt);
-            if(rxpkt.pkt_status == 0x10 ||
-               rxpkt.pkt_status == 0x01) // Place the packet in a queue such that app_mqtt can send it
-            {
-                //   SYS_CONSOLE_MESSAGE("LORA: PKTOUT\r\n");
-                enqueueLoRaRX(&rxpkt);
-                SYS_DEBUG(SYS_ERROR_INFO, "LORA: Accepted packet\r\n");
-                // printRXPacket(&rxpkt);
-                last_rx_timestamp = rxpkt.timestamp;
-            }
-            else
-            {
-                SYS_DEBUG(SYS_ERROR_INFO, "LORA: Packet dropped! Bad CRC\r\n");
-            }
-        }
-        else
-        {
-            SYS_CONSOLE_MESSAGE("LORA: PKT CHKFAIL\r\n");
-        }
-        gotuartrx_packet = false;
-        memset(uartrx, 0, uartrx_len + 6);
-        uartrx_len = 0;
-        sendRXReply(LORA_ACK);
-        // SYS_CONSOLE_MESSAGE("LORA: EMPTY PKT MEM\r\n");
-        // SYS_CONSOLE_PRINT("LORA: INBUF:%d\r\n",uxQueueMessagesWaiting( xUARTRXQueue));
-    }
+//    if(gotuartrx_packet &&
+//       uxQueueMessagesWaiting(xUARTRXQueue) >= uartrx_len + 2) // +2 for checksum & frame end
+//    {
+//        uint16_t byte_counter = 0;
+//        while(byte_counter < (uartrx_len + 2))
+//        {
+//            uint8_t msg[1];
+//            if(xQueueReceive(xUARTRXQueue, msg, 0) != pdTRUE)
+//            {
+//                gotuartrx_packet = false;
+//                uartrx_len       = 0;
+//                sendRXReply(LORA_ACK);
+//                break;
+//            }
+//            uartrx[4 + byte_counter] = msg[0];
+//            byte_counter++;
+//        }
+//        //  SYS_CONSOLE_MESSAGE("LORA: PKT\r\n");
+//        uint16_t pktit = 0;
+//        for(pktit = 0; pktit < uartrx_len + 6; pktit++)
+//        {
+//            //      SYS_CONSOLE_PRINT("%d\r\n",uartrx[pktit]);
+//        }
+//        uint32_t checksum   = 0;
+//        uint16_t checksum_i = 0;
+//
+//        for(checksum_i = 0; checksum_i < (uartrx_len + 4); checksum_i++) // +4 for packet header type length
+//        {
+//            checksum += uartrx[checksum_i];
+//        }
+//        checksum = checksum & 0xFF;
+//        if(checksum == uartrx[uartrx_len + 4])
+//        {
+//
+//            if(uartrx[1] != LORA_COMMAND_RECEIVE)
+//            {
+//                gotuartrx_packet = false;
+//                memset(uartrx, 0, uartrx_len + 6);
+//                uartrx_len = 0;
+//                sendRXReply(LORA_ACK);
+//                //    SYS_CONSOLE_MESSAGE("LORA: REGLOR\r\n");
+//                //    SYS_CONSOLE_PRINT("LORA: INBUF:%d\r\n",uxQueueMessagesWaiting( xUARTRXQueue));
+//                return;
+//            }
+//            // SYS_CONSOLE_MESSAGE("LORA: LPKTOK\r\n");
+//            parseRXPacket(&uartrx[4], &rxpkt);
+//            if(rxpkt.pkt_status == 0x10 ||
+//               rxpkt.pkt_status == 0x01) // Place the packet in a queue such that app_mqtt can send it
+//            {
+//                //   SYS_CONSOLE_MESSAGE("LORA: PKTOUT\r\n");
+//                enqueueLoRaRX(&rxpkt);
+//                SYS_DEBUG(SYS_ERROR_INFO, "LORA: Accepted packet\r\n");
+//                // printRXPacket(&rxpkt);
+//                last_rx_timestamp = rxpkt.timestamp;
+//            }
+//            else
+//            {
+//                SYS_DEBUG(SYS_ERROR_INFO, "LORA: Packet dropped! Bad CRC\r\n");
+//            }
+//        }
+//        else
+//        {
+//            SYS_CONSOLE_MESSAGE("LORA: PKT CHKFAIL\r\n");
+//        }
+//        gotuartrx_packet = false;
+//        memset(uartrx, 0, uartrx_len + 6);
+//        uartrx_len = 0;
+//        sendRXReply(LORA_ACK);
+//        // SYS_CONSOLE_MESSAGE("LORA: EMPTY PKT MEM\r\n");
+//        // SYS_CONSOLE_PRINT("LORA: INBUF:%d\r\n",uxQueueMessagesWaiting( xUARTRXQueue));
+//    }
 }
