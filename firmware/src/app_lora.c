@@ -1058,6 +1058,10 @@ void APP_LORA_Tasks(void)
                     _setState(APP_LORA_WAIT_FOR_APP);
                 }
             } else if (SYS_TMR_DelayStatusGet(timeoutTimerHandle)) {
+                // TODO: find a proper recovery -> _changeState(STATE_WAIT_FOR_NETWORK);
+                RebootWithMessage("LoRa comm failed, rebooting");    
+                
+                
                 if (initialCommunicationRetryCount == 0) {
                     SYS_PRINT("LORA: LoRa module not found. Make sure the module is connected correctly.\r\n");
                     _setState(APP_LORA_NOT_FOUND);
