@@ -15,6 +15,12 @@
 #include "helper_wdt.h"
 #include "error_messages.h"
 
+// These are only needed for the blocking delay loop.
+#include "peripheral/wdt/plib_wdt.h"
+#include "peripheral/tmr/plib_tmr.h"
+#include "peripheral/reset/plib_reset.h"
+#include "peripheral/int/plib_int.h"
+
 /* ************************************************************************** */
 /* ************************************************************************** */
 /* Section: File Scope or Global Data                                         */
@@ -86,6 +92,7 @@ static bool getSync();
 static bool setSync(bool public);
 static void _setState(APP_STATES_LORA newState);
 static void restart_lora_configuration();
+static void shortSpinloopDelay(void);
 
 static uint32_t timeout_timer = 0;
 static uint32_t lastAckTime   = 0;
@@ -274,6 +281,7 @@ bool configLora(void)
     stopLora();
 
     frequency_band = getVersion();
+    shortSpinloopDelay(); // FIXME: this blocking delay is a workaround for the synchronization issue with the LoRa module
     SYS_PRINT("LORA: version: %02X\r\n", frequency_band);
     uint32_t config_freq_band = appGWActivationData.configuration_sx1301.rfchain[0].freq;
 
@@ -620,6 +628,10 @@ bool sendPacket(loraTXPacket* txpkt)
 
 bool sendCommand(uint8_t command, uint8_t* payload, uint16_t len)
 {  
+    // FIXME: this blocking delay is a workaround for the synchronization issue with the LoRa module
+    // a magic delay before sending the command, if not some modules refuse to work
+    shortSpinloopDelay();
+   
     // flush Lora UART RX before sending any command
     if (appData.state != APP_LORA_GO_ASYNC && appData.state != APP_LORA_POLL_UART)
     {
@@ -1295,3 +1307,14 @@ uint8_t APP_LORA_GW_CARD_VERSION(void)
 {
     return frequency_band;
 }
+
+// Blocking delay loop. This delay is used for a synchronization issue workaround.
+static void shortSpinloopDelay(void)
+{
+    uint32_t t=0x0000FFFF; // Busy while loop 64k times
+    while(t>0) {
+        t--;
+        PLIB_WDT_TimerClear(WDT_ID_0);
+    }
+}
+
